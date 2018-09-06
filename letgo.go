@@ -2,7 +2,6 @@ package letgo
 
 import (
 	"net/http"
-	"log"
 )
 
 //顶层对象
@@ -13,10 +12,6 @@ type letgo struct {
 }
 
 func (l *letgo) Start (port string)  {
-	// 判断是否设置路由
-	if len(l.Route.entry) == 0 {
-		log.Fatal("not set router")
-	}
 	// 传入一个端口号，没有返回值，根据端口号开启http监听
 	l.Server.Addr = port
 	// 此处要进行资源初始化，加载所有路由、配置文件等等
@@ -30,8 +25,12 @@ func (l *letgo) Start (port string)  {
 }
 
 func New() *letgo {
-	entry := make(map[string]*node)
-	return &letgo{Route:&Router{entry:entry}, Server:&http.Server{}}
+	return &letgo{Route:&Router{
+		RedirectTrailingSlash:true,
+		RedirectFixedPath:true,
+		HandleMethodNotAllowed:true,
+		HandleOPTIONS:true,
+	}, Server:&http.Server{}}
 }
 
 //具体执行的逻辑处理单元
@@ -40,13 +39,18 @@ type Handle func(cxt *Cxt)
 type Cxt struct {
 	write http.ResponseWriter
 	request *http.Request
-	param map[string]string
+	params []Param
 }
 func (cxt *Cxt) Send(data string) {
 	cxt.write.Write([]byte(data))
 }
 func (cxt *Cxt) Get(key string) string {
-	return cxt.param[key]
+	for _, v := range cxt.params {
+		if v.Key == key {
+			return v.Value
+		}
+	}
+	return ""
 }
 //GET 方法
 func (l *letgo) Get(path string, handler Handle) {
@@ -67,4 +71,20 @@ func (l *letgo) Update(path string, handler Handle) {
 //DELETE 方法
 func (l *letgo) Delete(path string, handler Handle) {
 	l.Route.Handle("DELETE", path, handler)
+}
+
+//Error 设置 MethodNotAllowed NotFound
+func (l *letgo) Error(handlers... Handle) {
+	for k, handle := range handlers {
+		switch k {
+			case 0:
+				l.Route.MethodNotAllowed = handle
+			case 1:
+				l.Route.NotFound = handle
+		}
+	}
+}
+//Panic 设置 PanicHandler
+func (l *letgo) Panic(handle func(http.ResponseWriter, *http.Request, interface{})) {
+	l.Route.PanicHandler = handle
 }
