@@ -11,16 +11,18 @@ import (
 )
 
 type Db struct {
-	coon         *sql.DB
-	sql          string //本次sql
-	tableName    string
-	field        []string
-	set          map[string]string
-	where        map[string]interface{}
-	whereIn      map[string][]interface{}
-	whereBetween map[string][2]interface{}
-	order        map[string]string
-	limitNum     int
+	coon           *sql.DB
+	sql            string //本次sql
+	tableName      string
+	tableNameAlias string
+	field          []string
+	join           string
+	set            map[string]string
+	where          map[string]interface{}
+	whereIn        map[string][]interface{}
+	whereBetween   map[string][2]interface{}
+	order          map[string]string
+	limitNum       int
 }
 
 var (
@@ -52,22 +54,25 @@ func (db *Db) GetSelectSQl() (string, error) {
 	var sql bytes.Buffer
 	sql.WriteString("SELECT ")
 	//field
-	db.writeField(sql)
+	db.writeField(&sql)
 	//table name
 	sql.WriteString(" FROM `")
 	sql.WriteString(db.tableName)
 	sql.WriteString("`")
+	//alias
+	db.writeAlias(&sql)
 	//JOIN
-	//db.writeJoin TODO
+	db.writeJoin(&sql)
 	//where
-	db.writeWhere(sql)
+	db.writeWhere(&sql)
 	//order
-	db.writeOrder(sql)
+	db.writeOrder(&sql)
 	//limit
-	db.writeLimit(sql)
-	return sql.String(), nil
+	db.writeLimit(&sql)
+	db.sql = sql.String()
+	return db.sql, nil
 }
-func (db *Db) writeField(sql bytes.Buffer) {
+func (db *Db) writeField(sql *bytes.Buffer) {
 	if db.field != nil {
 		for k, v := range db.field {
 			if k != 0 {
@@ -81,7 +86,21 @@ func (db *Db) writeField(sql bytes.Buffer) {
 		sql.WriteString("*")
 	}
 }
-func (db *Db) writeWhere(sql bytes.Buffer) {
+func (db *Db) writeAlias(sql *bytes.Buffer) {
+	if db.tableNameAlias != "" {
+		sql.WriteString(" AS `")
+		sql.WriteString(db.tableNameAlias)
+		sql.WriteString("`")
+	}
+}
+func (db *Db) writeJoin(sql *bytes.Buffer) {
+	if db.join != "" {
+		sql.WriteString(" ")
+		sql.WriteString(db.join)
+		sql.WriteString(" ")
+	}
+}
+func (db *Db) writeWhere(sql *bytes.Buffer) {
 	var ix int
 	if db.where != nil || db.whereIn != nil || db.whereBetween != nil {
 		sql.WriteString(" WHERE ")
@@ -94,24 +113,73 @@ func (db *Db) writeWhere(sql bytes.Buffer) {
 			if !strings.Contains(k, "?") {
 				sql.WriteString("`")
 				sql.WriteString(k)
-				sql.WriteString("` = ")
+				sql.WriteString("` = '")
 				sql.WriteString(v.(string))
+				sql.WriteString("'")
 			} else {
-				k = strings.Replace(k, "?", "%v", 1)
+				k = strings.Replace(k, "?", "'%v'", 1)
 				sql.WriteString(fmt.Sprintf(k, v))
 			}
 			ix++
 		}
 	}
-	//wherein
-	//whereBetween
+	if db.whereIn != nil {
+		for k, v := range db.whereIn {
+			if ix != 0 {
+				sql.WriteString(" AND ")
+			}
+			sql.WriteString("`")
+			sql.WriteString(k)
+			sql.WriteString("` IN (")
+			for k1, v1 := range v {
+				if k1 != 0 {
+					sql.WriteString(", ")
+				}
+				sql.WriteString("'")
+				in, ok := v1.(string)
+				if !ok {
+					continue
+				}
+				sql.WriteString(in)
+				sql.WriteString("'")
+			}
+			sql.WriteString(")")
+			ix++
+		}
+	}
+	if db.whereBetween != nil {
+		for k, v := range db.whereBetween {
+			if ix != 0 {
+				sql.WriteString(" AND ")
+			}
+			start, ok := v[0].(string)
+			if !ok {
+				continue
+			}
+			end, ok := v[1].(string)
+			if !ok {
+				continue
+			}
+			sql.WriteString("`")
+			sql.WriteString(k)
+			sql.WriteString("` BETWEEN (")
+			sql.WriteString("'")
+			sql.WriteString(start)
+			sql.WriteString("', ")
+			sql.WriteString("'")
+			sql.WriteString(end)
+			sql.WriteString("'")
+			sql.WriteString(")")
+			ix++
+		}
+	}
 }
-func (db *Db) writeOrder(sql bytes.Buffer) {
+func (db *Db) writeOrder(sql *bytes.Buffer) {
 	if db.order != nil {
 		var ix int
 		sql.WriteString(" ORDER BY ")
 		for k, v := range db.order {
-			if ix == 0 {
+			if ix != 0 {
 				sql.WriteString(", ")
 				ix++
 			}
@@ -122,7 +190,7 @@ func (db *Db) writeOrder(sql bytes.Buffer) {
 	}
 }
 
-func (db *Db) writeLimit(sql bytes.Buffer) {
+func (db *Db) writeLimit(sql *bytes.Buffer) {
 	if db.limitNum > 0 {
 		sql.WriteString(" LIMIT ")
 		sql.WriteString(strconv.Itoa(db.limitNum))
@@ -135,9 +203,21 @@ func (db *Db) Table(name string) *Db {
 	return db
 }
 
+//table
+func (db *Db) Alias(name string) *Db {
+	db.tableNameAlias = name
+	return db
+}
+
 //Feild
 func (db *Db) Field(field ...string) *Db {
 	db.field = field
+	return db
+}
+
+//JOIN
+func (db *Db) Join(join string) *Db {
+	db.join = join
 	return db
 }
 
