@@ -27,98 +27,106 @@ var (
 	TableNameError = errors.New("table name is null")
 )
 
-func (db *Db) GetSQl() (string, error) {
-	var field, set, where, whereIn, whereBetween, order, sql bytes.Buffer
-	var ix int
-	if db.tableName == "" {
-		return "", TableNameError
+const (
+	SELECT = iota
+	UPDATE
+	DELETE
+	INSERT
+)
+
+func (db *Db) GetSQl(op int) (string, error) {
+	switch op {
+	case SELECT:
+		return db.GetSelectSQl()
+	case UPDATE:
+		return db.GetSelectSQl()
+	case DELETE:
+		return db.GetSelectSQl()
+	case INSERT:
+		return db.GetSelectSQl()
+	default:
+		return db.GetSelectSQl()
 	}
+}
+func (db *Db) GetSelectSQl() (string, error) {
+	var sql bytes.Buffer
+	sql.WriteString("SELECT ")
+	//field
+	db.writeField(sql)
+	//table name
+	sql.WriteString(" FROM `")
+	sql.WriteString(db.tableName)
+	sql.WriteString("`")
+	//JOIN
+	//db.writeJoin TODO
+	//where
+	db.writeWhere(sql)
+	//order
+	db.writeOrder(sql)
+	//limit
+	db.writeLimit(sql)
+	return sql.String(), nil
+}
+func (db *Db) writeField(sql bytes.Buffer) {
 	if db.field != nil {
 		for k, v := range db.field {
 			if k != 0 {
-				field.WriteString(", ")
+				sql.WriteString(", ")
 			}
-			field.WriteString("`")
-			field.WriteString(v)
-			field.WriteString("`")
+			sql.WriteString("`")
+			sql.WriteString(v)
+			sql.WriteString("`")
 		}
+	} else {
+		sql.WriteString("*")
 	}
-	if db.set != nil {
-		for k, v := range db.set {
-			if ix == 0 {
-				set.WriteString(", ")
-			}
-			set.WriteString("`")
-			set.WriteString(k)
-			set.WriteString("` = ")
-			set.WriteString(v)
-			ix++
-		}
-		ix = 0
+}
+func (db *Db) writeWhere(sql bytes.Buffer) {
+	var ix int
+	if db.where != nil || db.whereIn != nil || db.whereBetween != nil {
+		sql.WriteString(" WHERE ")
 	}
 	if db.where != nil {
 		for k, v := range db.where {
 			if ix != 0 {
-				where.WriteString(" AND ")
+				sql.WriteString(" AND ")
 			}
 			if !strings.Contains(k, "?") {
-				where.WriteString("`")
-				where.WriteString(k)
-				where.WriteString("` = ")
-				where.WriteString(v.(string))
+				sql.WriteString("`")
+				sql.WriteString(k)
+				sql.WriteString("` = ")
+				sql.WriteString(v.(string))
 			} else {
 				k = strings.Replace(k, "?", "%v", 1)
-				where.WriteString(fmt.Sprintf(k, v))
+				sql.WriteString(fmt.Sprintf(k, v))
 			}
 			ix++
 		}
-		ix = 0
 	}
-	if db.whereIn != nil {
-
-	}
-	if db.whereBetween != nil {
-
-	}
+	//wherein
+	//whereBetween
+}
+func (db *Db) writeOrder(sql bytes.Buffer) {
 	if db.order != nil {
+		var ix int
+		sql.WriteString(" ORDER BY ")
 		for k, v := range db.order {
 			if ix == 0 {
-				set.WriteString(", ")
+				sql.WriteString(", ")
 				ix++
 			}
-			order.WriteString(k)
-			order.WriteString(" ")
-			order.WriteString(v)
+			sql.WriteString(k)
+			sql.WriteString(" ")
+			sql.WriteString(v)
 		}
-		ix = 0
 	}
-	//组装sql  SELECT
-	sql.WriteString("SELECT ")
-	if field.Len() != 0 {
-		sql.WriteString(field.String())
-	} else {
-		sql.WriteString("*")
-	}
-	sql.WriteString(" FROM `")
-	sql.WriteString(db.tableName)
-	sql.WriteString("`")
-	if where.Len() != 0 {
-		sql.WriteString(" WHERE ")
-		sql.WriteString(where.String())
-	}
-	if whereIn.Len() != 0 && whereBetween.Len() != 0 {
+}
 
-	}
-	if order.Len() != 0 {
-		sql.WriteString(" ORDER BY ")
-		sql.WriteString(order.String())
-	}
+func (db *Db) writeLimit(sql bytes.Buffer) {
 	if db.limitNum > 0 {
 		sql.WriteString(" LIMIT ")
 		sql.WriteString(strconv.Itoa(db.limitNum))
 	}
-	sql.WriteString(";")
-	return sql.String(), nil
 }
 
 //table
@@ -186,18 +194,23 @@ func (db *Db) Limit(num int) *Db {
 }
 
 //select
-func (db *Db) Select() {
-
+func (db *Db) Select() (string, error) {
+	return db.GetSQl(SELECT)
 }
 
 //update
-func (db *Db) Update() {
-
+func (db *Db) Update() (string, error) {
+	return db.GetSQl(UPDATE)
 }
 
 //delete
-func (db *Db) Delete() {
+func (db *Db) Delete() (string, error) {
+	return db.GetSQl(DELETE)
+}
 
+//insert
+func (db *Db) Insert() (string, error) {
+	return db.GetSQl(INSERT)
 }
 
 //清空
